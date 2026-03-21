@@ -147,3 +147,52 @@ See `DATABASE_SCHEMA.md` for full schema explanation.
 
 Import `postman_collection.json` into Postman to test all endpoints.
 See `API_DOCS.md` for full request/response documentation.
+
+---
+
+## Screenshots
+
+### Registration
+![Registration](screenshots/Registration.png)
+
+### Verify OTP
+![Verify OTP](screenshots/Verify%20OTP.png)
+
+### Resend OTP
+![Resend OTP](screenshots/Resend%20OTP.png)
+
+### Login (Password)
+![Login Password](screenshots/Login(Password).png)
+
+### Login OTP
+![Login OTP](screenshots/Login%20OTP.png)
+
+### Login OTP Verify
+![Login OTP Verify](screenshots/Login%20OTP%20Verify.png)
+
+### Forgot Password
+![Forgot Password](screenshots/Forgot%20Password.png)
+
+### Reset Password
+![Reset Password](screenshots/Reset%20Password.png)
+
+### Refresh Token
+![Refresh Token](screenshots/Refresh%20Token.png)
+
+### Logout
+![Logout](screenshots/Logout.png)
+
+### Auth Me
+![Auth Me](screenshots/Auth%20Me.png)
+
+### Profile
+![Profile](screenshots/Profile.png)
+
+### Get All Users
+![Get All Users](screenshots/Get%20All%20Users.png)
+
+### Delete User
+![Delete User](screenshots/Delete%20User.png)
+
+### Update User Role
+![Update User Role](screenshots/Update%20User%20Role.png)
