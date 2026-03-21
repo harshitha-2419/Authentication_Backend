@@ -43,7 +43,7 @@ const globalLimiter = rateLimit({
 // Strict limiter — for sensitive auth routes (login, register, OTP, password reset)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10,                   // max 10 requests per IP per window
+  max: 100,                  // max 100 requests per IP per window (increase for dev testing)
   message: { success: false, message: "Too many attempts, please try again after 15 minutes." },
   standardHeaders: true,
   legacyHeaders: false,
