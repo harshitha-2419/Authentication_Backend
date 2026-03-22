@@ -114,6 +114,9 @@ npm start
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | GET | `/profile` | ✅ JWT | Get user profile |
+| GET | `/sessions` | ✅ JWT | Get all active sessions |
+| DELETE | `/sessions/:sessionId` | ✅ JWT | Revoke a specific session |
+| GET | `/login-history` | ✅ JWT | Get last 20 login attempts |
 
 ### Admin Routes — `/api/admin`
 
@@ -134,6 +137,9 @@ npm start
 - **Rate Limiting** — 100 req/15min globally, 10 req/15min on auth routes
 - **OTP** — 6-digit, expires in 5 min, max 3 attempts, max 3 resends
 - **Password Reset** — SHA-256 hashed token, expires in 15 min
+- **Account Lock** — locked for 15 min after 5 consecutive failed login attempts
+- **Session Management** — max 5 concurrent sessions, per-device revocation
+- **Login History** — last 20 login attempts tracked with IP and device info
 
 ---
 
@@ -161,8 +167,11 @@ See `API_DOCS.md` for full request/response documentation.
 ### Resend OTP
 ![Resend OTP](screenshots/Resend%20OTP.png)
 
-### Login (Password)
+### Login (Password) with Session ID
 ![Login Password](screenshots/Login(Password).png)
+
+### Login with Session ID — Bonus Feature
+![Login Session ID](screenshots/Login%20(Session%20ID%20)%20-%20Bonus%20Features.png)
 
 ### Login OTP
 ![Login OTP](screenshots/Login%20OTP.png)
@@ -187,6 +196,15 @@ See `API_DOCS.md` for full request/response documentation.
 
 ### Profile
 ![Profile](screenshots/Profile.png)
+
+### Get Sessions
+![Get Sessions](screenshots/Get%20sessions.png)
+
+### Revoke Session
+![Revoke Session](screenshots/Revoke%20sessions.png)
+
+### Login History
+![Login History](screenshots/Login-History.png)
 
 ### Get All Users
 ![Get All Users](screenshots/Get%20All%20Users.png)

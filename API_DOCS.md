@@ -78,12 +78,14 @@ Login with email and password.
 {
   "success": true,
   "accessToken": "<jwt_access_token>",
-  "refreshToken": "<jwt_refresh_token>"
+  "refreshToken": "<jwt_refresh_token>",
+  "sessionId": "<uuid>"
 }
 ```
 **Errors**
-- `401` — invalid email or password
+- `401` — invalid email or password (remaining attempts shown)
 - `403` — email not verified
+- `423` — account locked (shows minutes remaining)
 
 ---
 
@@ -113,7 +115,8 @@ Verify login OTP and receive tokens.
 {
   "success": true,
   "accessToken": "<jwt_access_token>",
-  "refreshToken": "<jwt_refresh_token>"
+  "refreshToken": "<jwt_refresh_token>",
+  "sessionId": "<uuid>"
 }
 ```
 **Errors**
@@ -212,6 +215,101 @@ Authorization: Bearer <access_token>
 
 ---
 
+## User Routes 🔒
+
+All user routes require `Authorization: Bearer <access_token>` header.
+
+---
+
+### GET `/user/profile`
+Get logged-in user's profile.
+
+**Headers**
+```
+Authorization: Bearer <access_token>
+```
+**Success `200`**
+```json
+{
+  "success": true,
+  "user": { "_id": "...", "name": "John Doe", "email": "john@example.com", "role": "user", ... }
+}
+```
+
+---
+
+### GET `/user/sessions`
+Get all active sessions for the logged-in user.
+
+**Headers**
+```
+Authorization: Bearer <access_token>
+```
+**Success `200`**
+```json
+{
+  "success": true,
+  "sessions": [
+    {
+      "sessionId": "<uuid>",
+      "deviceInfo": "Mozilla/5.0 ...",
+      "ip": "127.0.0.1",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### DELETE `/user/sessions/:sessionId`
+Revoke a specific session (logout from that device).
+
+**Headers**
+```
+Authorization: Bearer <access_token>
+```
+**Success `200`**
+```json
+{ "success": true, "message": "Session revoked successfully" }
+```
+**Errors**
+- `404` — session not found
+
+---
+
+### GET `/user/login-history`
+Get last 20 login attempts for the logged-in user.
+
+**Headers**
+```
+Authorization: Bearer <access_token>
+```
+**Success `200`**
+```json
+{
+  "success": true,
+  "loginHistory": [
+    {
+      "ip": "127.0.0.1",
+      "deviceInfo": "Mozilla/5.0 ...",
+      "status": "success",
+      "reason": null,
+      "timestamp": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "ip": "127.0.0.1",
+      "deviceInfo": "Mozilla/5.0 ...",
+      "status": "failed",
+      "reason": "Invalid password",
+      "timestamp": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
 ## Admin Routes 🔒
 
 All admin routes require `Authorization: Bearer <access_token>` header.
@@ -291,5 +389,28 @@ All errors follow this format:
 | `403` | Forbidden |
 | `404` | Not Found |
 | `409` | Conflict |
+| `423` | Locked (account locked) |
 | `429` | Too Many Requests |
 | `500` | Internal Server Error |
+
+---
+
+## Account Lock Behaviour
+
+- After **5 consecutive failed** password login attempts, the account is locked for **15 minutes**
+- Each failed attempt returns the remaining attempts count
+- Lock auto-expires after 15 minutes
+- Successful login resets the failed attempts counter
+
+## Session Management
+
+- Each login (password or OTP) creates a new session and returns a `sessionId`
+- Max **5 concurrent sessions** per user (oldest removed when exceeded)
+- Use `DELETE /user/sessions/:sessionId` to revoke a specific session
+- Logout removes only the session associated with the provided `refreshToken`
+
+## Login History
+
+- Last **20 login attempts** are stored per user
+- Each entry includes: `ip`, `deviceInfo`, `status` (`success`/`failed`), `reason`, `timestamp`
+- Accessible via `GET /user/login-history`

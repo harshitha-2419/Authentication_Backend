@@ -1,6 +1,28 @@
 import { Schema, model } from "mongoose";
 import { IUser } from "../types";
 
+const SessionSchema = new Schema(
+  {
+    sessionId: { type: String, required: true },
+    refreshToken: { type: String, required: true },
+    deviceInfo: { type: String, default: "Unknown" },
+    ip: { type: String, default: "Unknown" },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
+const LoginHistorySchema = new Schema(
+  {
+    ip: { type: String, default: "Unknown" },
+    deviceInfo: { type: String, default: "Unknown" },
+    status: { type: String, enum: ["success", "failed"], required: true },
+    reason: { type: String, default: null },
+    timestamp: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
 // ─── User Schema ──────────────────────────────────────────────────────────────
 
 const UserSchema = new Schema<IUser>(
@@ -71,6 +93,12 @@ const UserSchema = new Schema<IUser>(
       type: String,
       default: null,
     },
+
+    failedLoginAttempts: { type: Number, default: 0 },
+    lockUntil: { type: Date, default: null },
+
+    sessions: { type: [SessionSchema], default: [] },
+    loginHistory: { type: [LoginHistorySchema], default: [] },
 
     role: {
       type: String,

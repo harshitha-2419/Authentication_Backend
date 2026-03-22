@@ -1,15 +1,31 @@
 import { Document } from "mongoose";
 
-// ─── User Interface ───────────────────────────────────────────────────────────
+// ─── Session Interface ────────────────────────────────────────────────────────
+export interface ISession {
+  sessionId: string;
+  refreshToken: string;
+  deviceInfo: string;
+  ip: string;
+  createdAt: Date;
+}
 
-// Represents the shape of a User document in MongoDB
+// ─── Login History Interface ──────────────────────────────────────────────────
+export interface ILoginHistory {
+  ip: string;
+  deviceInfo: string;
+  status: "success" | "failed";
+  reason?: string;
+  timestamp: Date;
+}
+
+// ─── User Interface ───────────────────────────────────────────────────────────
 export interface IUser extends Document {
   name: string;
   email: string;
   phone: string;
-  password: string; // stored as bcrypt hash
+  password: string;
 
-  isVerified: boolean; // becomes true after OTP verification
+  isVerified: boolean;
 
   otp: string | null;
   otpExpiry: Date | null;
@@ -19,6 +35,16 @@ export interface IUser extends Document {
   resetTokenExpiry: Date | null;
   refreshToken: string | null;
   role: "user" | "admin" | "super_admin";
+
+  // Account lock
+  failedLoginAttempts: number;
+  lockUntil: Date | null;
+
+  // Sessions
+  sessions: ISession[];
+
+  // Login history
+  loginHistory: ILoginHistory[];
 }
 
 // ─── Request Body Types ───────────────────────────────────────────────────────

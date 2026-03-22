@@ -1,13 +1,14 @@
 {
   "info": {
     "name": "Authentication Backend",
-    "description": "Complete API collection for the Authentication Backend. \n\nSetup:\n1. Set the `baseUrl` variable to `http://localhost:5000/api`\n2. After login, copy the accessToken and set it in the `accessToken` variable\n3. Same for `refreshToken`",
+    "description": "Complete API collection for the Authentication Backend. \n\nSetup:\n1. Set the `baseUrl` variable to `http://localhost:5000/api`\n2. After login, accessToken, refreshToken and sessionId are auto-set via test scripts\n3. Use sessionId to revoke specific sessions",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:5000/api", "type": "string" },
     { "key": "accessToken", "value": "", "type": "string" },
-    { "key": "refreshToken", "value": "", "type": "string" }
+    { "key": "refreshToken", "value": "", "type": "string" },
+    { "key": "sessionId", "value": "", "type": "string" }
   ],
   "item": [
     {
@@ -58,7 +59,8 @@
                 "exec": [
                   "const res = pm.response.json();",
                   "if (res.accessToken) pm.collectionVariables.set('accessToken', res.accessToken);",
-                  "if (res.refreshToken) pm.collectionVariables.set('refreshToken', res.refreshToken);"
+                  "if (res.refreshToken) pm.collectionVariables.set('refreshToken', res.refreshToken);",
+                  "if (res.sessionId) pm.collectionVariables.set('sessionId', res.sessionId);"
                 ]
               }
             }
@@ -94,7 +96,8 @@
                 "exec": [
                   "const res = pm.response.json();",
                   "if (res.accessToken) pm.collectionVariables.set('accessToken', res.accessToken);",
-                  "if (res.refreshToken) pm.collectionVariables.set('refreshToken', res.refreshToken);"
+                  "if (res.refreshToken) pm.collectionVariables.set('refreshToken', res.refreshToken);",
+                  "if (res.sessionId) pm.collectionVariables.set('sessionId', res.sessionId);"
                 ]
               }
             }
@@ -187,6 +190,30 @@
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": { "raw": "{{baseUrl}}/user/profile", "host": ["{{baseUrl}}"], "path": ["user", "profile"] }
+          }
+        },
+        {
+          "name": "Get Sessions",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/user/sessions", "host": ["{{baseUrl}}"], "path": ["user", "sessions"] }
+          }
+        },
+        {
+          "name": "Revoke Session",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/user/sessions/{{sessionId}}", "host": ["{{baseUrl}}"], "path": ["user", "sessions", "{{sessionId}}"] }
+          }
+        },
+        {
+          "name": "Login History",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/user/login-history", "host": ["{{baseUrl}}"], "path": ["user", "login-history"] }
           }
         }
       ]

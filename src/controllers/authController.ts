@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { User } from "../models/User";
 import { generateOTP, getOTPExpiry } from "../utils/otp";
 import { sendOTPEmail, sendResetPasswordEmail } from "../utils/email";
@@ -11,6 +12,16 @@ import { RegisterRequestBody, VerifyOtpRequestBody, LoginRequestBody, LoginOtpRe
 const SALT_ROUNDS = 12;
 const MAX_OTP_ATTEMPTS = 3;
 const MAX_OTP_RESEND = 3;
+const MAX_FAILED_LOGINS = 5;
+const LOCK_DURATION_MS = 15 * 60 * 1000;
+const MAX_LOGIN_HISTORY = 20;
+const MAX_SESSIONS = 5;
+
+const getDeviceInfo = (req: Request): string =>
+  (req.headers["user-agent"] as string) || "Unknown";
+
+const getIp = (req: Request): string =>
+  (req.headers["x-forwarded-for"] as string)?.split(",")[0] || req.socket.remoteAddress || "Unknown";
 
 // ─── Register ─────────────────────────────────────────────────────────────────
 
@@ -87,7 +98,6 @@ export const verifyOtp = async (
       return;
     }
 
-    // Block if max attempts reached
     if (user.otpAttempts >= MAX_OTP_ATTEMPTS) {
       res.status(429).json({ success: false, message: "Too many incorrect attempts. Please resend OTP." });
       return;
@@ -102,14 +112,10 @@ export const verifyOtp = async (
       user.otpAttempts += 1;
       await user.save();
       const remaining = MAX_OTP_ATTEMPTS - user.otpAttempts;
-      res.status(400).json({
-        success: false,
-        message: `Invalid OTP. ${remaining} attempt(s) remaining.`,
-      });
+      res.status(400).json({ success: false, message: `Invalid OTP. ${remaining} attempt(s) remaining.` });
       return;
     }
 
-    // OTP correct — verify and clear
     user.isVerified = true;
     user.otp = null;
     user.otpExpiry = null;
@@ -124,7 +130,7 @@ export const verifyOtp = async (
   }
 };
 
-// ─── Resend OTP (registration + login OTP) ────────────────────────────────────
+// ─── Resend OTP ───────────────────────────────────────────────────────────────
 
 export const resendOtp = async (
   req: Request<{}, {}, LoginOtpRequestBody>,
@@ -139,7 +145,6 @@ export const resendOtp = async (
       return;
     }
 
-    // Block if max resends reached
     if (user.otpResendCount >= MAX_OTP_RESEND) {
       res.status(429).json({ success: false, message: "Maximum OTP resend limit reached. Please try again later." });
       return;
@@ -150,7 +155,7 @@ export const resendOtp = async (
 
     user.otp = otp;
     user.otpExpiry = otpExpiry;
-    user.otpAttempts = 0;          // reset attempts on resend
+    user.otpAttempts = 0;
     user.otpResendCount += 1;
     await user.save();
 
@@ -158,10 +163,7 @@ export const resendOtp = async (
     console.log(`[DEV] Resend OTP for ${user.email}: ${otp}`);
 
     const remaining = MAX_OTP_RESEND - user.otpResendCount;
-    res.status(200).json({
-      success: true,
-      message: `OTP resent to your email. ${remaining} resend(s) remaining.`,
-    });
+    res.status(200).json({ success: true, message: `OTP resent to your email. ${remaining} resend(s) remaining.` });
   } catch (error) {
     console.error("Resend OTP error:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -176,6 +178,8 @@ export const login = async (
 ): Promise<void> => {
   try {
     const { email, password } = req.body;
+    const ip = getIp(req);
+    const deviceInfo = getDeviceInfo(req);
 
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
@@ -188,16 +192,56 @@ export const login = async (
       return;
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      res.status(401).json({ success: false, message: "Invalid email or password" });
+    // Check account lock
+    if (user.lockUntil && user.lockUntil > new Date()) {
+      const minutesLeft = Math.ceil((user.lockUntil.getTime() - Date.now()) / 60000);
+      res.status(423).json({ success: false, message: `Account locked. Try again in ${minutesLeft} minute(s).` });
       return;
     }
 
+    // Auto-unlock if lock expired
+    if (user.lockUntil && user.lockUntil <= new Date()) {
+      user.failedLoginAttempts = 0;
+      user.lockUntil = null;
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      user.failedLoginAttempts += 1;
+
+      user.loginHistory.unshift({ ip, deviceInfo, status: "failed", reason: "Invalid password", timestamp: new Date() });
+      if (user.loginHistory.length > MAX_LOGIN_HISTORY) user.loginHistory.pop();
+
+      if (user.failedLoginAttempts >= MAX_FAILED_LOGINS) {
+        user.lockUntil = new Date(Date.now() + LOCK_DURATION_MS);
+        await user.save();
+        res.status(423).json({ success: false, message: "Too many failed attempts. Account locked for 15 minutes." });
+        return;
+      }
+
+      const remaining = MAX_FAILED_LOGINS - user.failedLoginAttempts;
+      await user.save();
+      res.status(401).json({ success: false, message: `Invalid email or password. ${remaining} attempt(s) remaining.` });
+      return;
+    }
+
+    // Successful login
+    user.failedLoginAttempts = 0;
+    user.lockUntil = null;
+
     const { accessToken, refreshToken } = generateTokens(user._id.toString());
+    const sessionId = crypto.randomUUID();
+
+    if (user.sessions.length >= MAX_SESSIONS) user.sessions.pop();
+    user.sessions.unshift({ sessionId, refreshToken, deviceInfo, ip, createdAt: new Date() });
+
     user.refreshToken = refreshToken;
+
+    user.loginHistory.unshift({ ip, deviceInfo, status: "success", timestamp: new Date() });
+    if (user.loginHistory.length > MAX_LOGIN_HISTORY) user.loginHistory.pop();
+
     await user.save();
-    res.status(200).json({ success: true, accessToken, refreshToken });
+    res.status(200).json({ success: true, accessToken, refreshToken, sessionId });
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -242,10 +286,7 @@ export const requestLoginOtp = async (
     console.log(`[DEV] Login OTP for ${user.email}: ${otp}`);
 
     const remaining = MAX_OTP_RESEND - user.otpResendCount;
-    res.status(200).json({
-      success: true,
-      message: `OTP sent to your email. ${remaining} resend(s) remaining.`,
-    });
+    res.status(200).json({ success: true, message: `OTP sent to your email. ${remaining} resend(s) remaining.` });
   } catch (error) {
     console.error("Request login OTP error:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -260,6 +301,8 @@ export const verifyLoginOtp = async (
 ): Promise<void> => {
   try {
     const { email, otp } = req.body;
+    const ip = getIp(req);
+    const deviceInfo = getDeviceInfo(req);
 
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
@@ -272,7 +315,6 @@ export const verifyLoginOtp = async (
       return;
     }
 
-    // Block if max attempts reached
     if (user.otpAttempts >= MAX_OTP_ATTEMPTS) {
       res.status(429).json({ success: false, message: "Too many incorrect attempts. Please request a new OTP." });
       return;
@@ -287,22 +329,29 @@ export const verifyLoginOtp = async (
       user.otpAttempts += 1;
       await user.save();
       const remaining = MAX_OTP_ATTEMPTS - user.otpAttempts;
-      res.status(400).json({
-        success: false,
-        message: `Invalid OTP. ${remaining} attempt(s) remaining.`,
-      });
+      res.status(400).json({ success: false, message: `Invalid OTP. ${remaining} attempt(s) remaining.` });
       return;
     }
 
-    // OTP correct — clear and return tokens
+    // OTP correct
     user.otp = null;
     user.otpExpiry = null;
     user.otpAttempts = 0;
     user.otpResendCount = 0;
+
     const { accessToken, refreshToken } = generateTokens(user._id.toString());
+    const sessionId = crypto.randomUUID();
+
+    if (user.sessions.length >= MAX_SESSIONS) user.sessions.pop();
+    user.sessions.unshift({ sessionId, refreshToken, deviceInfo, ip, createdAt: new Date() });
+
     user.refreshToken = refreshToken;
+
+    user.loginHistory.unshift({ ip, deviceInfo, status: "success", timestamp: new Date() });
+    if (user.loginHistory.length > MAX_LOGIN_HISTORY) user.loginHistory.pop();
+
     await user.save();
-    res.status(200).json({ success: true, accessToken, refreshToken });
+    res.status(200).json({ success: true, accessToken, refreshToken, sessionId });
   } catch (error) {
     console.error("Verify login OTP error:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -319,7 +368,6 @@ export const forgotPassword = async (
     const { email } = req.body;
 
     const user = await User.findOne({ email: email.toLowerCase() });
-    // Always respond with success to avoid email enumeration
     if (!user) {
       res.status(200).json({ success: true, message: "If that email exists, a reset link has been sent." });
       return;
@@ -354,7 +402,7 @@ export const resetPassword = async (
 
     const user = await User.findOne({
       resetToken: hashedToken,
-      resetTokenExpiry: { $gt: new Date() }, // token must not be expired
+      resetTokenExpiry: { $gt: new Date() },
     });
 
     if (!user) {
@@ -390,7 +438,6 @@ export const refreshToken = async (
 
     const decoded = jwt.verify(token, ENV.JWT_REFRESH_SECRET) as { userId: string };
 
-    // Check token exists in DB — invalidated tokens won't match
     const user = await User.findOne({ _id: decoded.userId, refreshToken: token });
     if (!user) {
       res.status(401).json({ success: false, message: "Invalid or expired refresh token" });
@@ -421,8 +468,10 @@ export const logout = async (
       return;
     }
 
-    // Clear refresh token from DB — immediately invalidates it
-    await User.findOneAndUpdate({ refreshToken: token }, { refreshToken: null });
+    await User.findOneAndUpdate(
+      { refreshToken: token },
+      { $pull: { sessions: { refreshToken: token } }, refreshToken: null }
+    );
 
     res.status(200).json({ success: true, message: "Logged out successfully" });
   } catch (error) {
